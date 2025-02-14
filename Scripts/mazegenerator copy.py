@@ -47,18 +47,21 @@ class TextureTheme:
     def _load_texture(self, texture_name):
         try:
             return load_texture(f'assets/textures/{texture_name}')
-        except:
-            print(f"No se pudo cargar la textura {texture_name}, usando textura por defecto")
-            return self.default_textures['wall']
+        except Exception as e:
+            print(f"No se pudo cargar la textura {texture_name}: {e}")
+            return None  # Usar None para indicar que no hay textura
 
     def get_theme(self, theme_name='default'):
         if theme_name in self.maze_themes:
-            return self.maze_themes[theme_name]
+            theme = self.maze_themes[theme_name]
+            for key in theme['textures']:
+                if theme['textures'][key] is None:
+                    theme['textures'][key] = self.default_textures[key]
+            return theme
         return {
             'textures': self.default_textures,
             'colors': self.default_colors
         }
-
     def get_random_theme(self):
         theme_name = random.choice(list(self.maze_themes.keys()))
         return self.get_theme(theme_name)
