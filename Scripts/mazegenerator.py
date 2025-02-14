@@ -69,7 +69,7 @@ if __name__ == '__main__':
     # Configuración del laberinto
     maze_width = 21  # Usar números impares (p.ej., 21x21)
     maze_height = 21  
-    cell_size = 4
+    cell_size = 6
     
     # Generamos el laberinto
     maze = Maze(maze_width, maze_height, cell_size)
