@@ -1,6 +1,5 @@
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
-from ursina.camera import Camera
 import random
 
 class Maze:
@@ -122,4 +121,68 @@ if __name__ == '__main__':
     player = FirstPersonController()
     player.position = Vec3(spawn_x * cell_size, cell_size, spawn_y * cell_size)
     
+    # --- Código para construir el minimapa por capas ---
+    # Suponiendo que 'maze' es tu instancia de Maze, con:
+    #   maze.width, maze.height, y maze.maze (la matriz de celdas)
+    # También suponemos que 'cell_size' es el tamaño en el mundo 3D (para ubicar al jugador)
+    # Creamos un contenedor para el minimapa en la UI
+    minimap_container = Entity(parent=camera.ui, name='minimap_container')
+    # Ubicación y escala del contenedor en la UI (ajusta según tus preferencias)
+    minimap_container.position = (0.73, 0.35)  
+    minimap_container.scale = (0.25, 0.25)  # Este contenedor trabajará en un sistema de coordenadas locales de [-0.5, 0.5]
+
+    # Calcula el tamaño de cada celda en coordenadas locales del contenedor
+    cell_w = 1 / maze.width    # ancho de celda en el contenedor (el contenedor abarca 1 unidad en cada dimensión)
+    cell_h = 1 / maze.height   # alto de celda
+
+    # Creamos la cuadrícula (una capa para los caminos/muros)
+    minimap_cells = []  # guardamos las entidades (opcional)
+    for y in range(maze.height):
+        for x in range(maze.width):
+            # Convertimos la posición (x, y) de la matriz al sistema local del contenedor.
+            # Queremos que la celda (0,0) (en la matriz) se muestre en la esquina superior izquierda.
+            # Por ello invertimos el eje y: la fila 0 se dibuja en y=+0.5 y la última fila en y=-0.5.
+            ui_x = -0.5 + cell_w/2 + x * cell_w
+            ui_y =  0.5 - cell_h/2 - y * cell_h  # invertimos y
+
+            # Si la celda es camino (1) la pintamos de blanco; si es muro (0) la pintamos de negro.
+            # (Puedes modificar los colores si prefieres caminos transparentes, pero aquí usamos blanco para diferenciarlos.)
+            cell_color = color.white if maze.maze[y][x] == 1 else color.black
+
+            cell = Entity(
+                parent = minimap_container,
+                model = 'quad',
+                position = (ui_x, ui_y),
+                scale = (cell_w, cell_h),
+                color = cell_color,
+                double_sided = True
+            )
+            minimap_cells.append(cell)
+
+    # Creamos el marcador del jugador como otro Entity que se posicionará sobre el contenedor.
+    player_marker = Entity(
+        parent = minimap_container,
+        model = 'circle',
+        color = color.azure,
+        scale = (max(cell_w, cell_h) * 0.8, max(cell_w, cell_h) * 0.8),
+        z = -0.01  # Asegura que se dibuje sobre las celdas
+    )
+
+    # Actualizamos la posición del marcador en cada frame, de acuerdo con la posición del jugador en el laberinto.
+    def update():
+        # Se suma la mitad del 'cell_size' para centrar el jugador en la celda,
+        # ya que cada celda se considera 2x2 en el mundo.
+        px = int((player.position.x + cell_size/2) / cell_size)
+        py = int((player.position.z + cell_size/2) / cell_size)
+
+        # Asegurarse de que la posición se mantenga dentro de los límites del laberinto
+        px = clamp(px, 0, maze.width - 1)
+        py = clamp(py, 0, maze.height - 1)
+        
+        # Convertir la celda a coordenadas del contenedor del minimapa:
+        ui_x = -0.5 + cell_w/2 + px * cell_w
+        ui_y =  0.5 - cell_h/2 - py * cell_h
+        
+        player_marker.position = (ui_x, ui_y)
+
     app.run()
