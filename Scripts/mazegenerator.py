@@ -122,6 +122,4 @@ if __name__ == '__main__':
     player = FirstPersonController()
     player.position = Vec3(spawn_x * cell_size, cell_size, spawn_y * cell_size)
     
-    
-
     app.run()
