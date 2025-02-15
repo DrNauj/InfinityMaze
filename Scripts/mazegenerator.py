@@ -128,12 +128,12 @@ class Maze:
                     wall = Entity(
                         model='cube',
                         position=pos,
-                        scale=Vec3(self.cell_size, self.cell_size * 2, self.cell_size),
+                        scale=Vec3(self.cell_size, self.cell_size , self.cell_size),
                         collider='box'
                     )
                     if texture:
                         wall.texture = texture
-                        wall.texture_scale = (2, 4)
+                        wall.texture_scale = (4, 4)
                         wall.color = wall_color  # Será color.white para texturas cargadas
                     else:
                         wall.color = wall_color
@@ -172,6 +172,7 @@ class CustomFirstPersonController(FirstPersonController):
 
 if __name__ == '__main__':
     app = Ursina()
+    #EditorCamera()
     # Intenta cargar la textura usando solo el nombre, sin ruta absoluta
     test_texture = load_texture('cave_wall.png')  # Prueba primero con esto
 
@@ -194,7 +195,7 @@ if __name__ == '__main__':
     floor_number = 1
     maze_width = 21
     maze_height = 21
-    cell_size = 6
+    cell_size = 8
     # Inicializamos el administrador de texturas
     theme_manager = TextureTheme()
     maze = Maze(maze_width, maze_height, cell_size, theme_manager)
@@ -206,7 +207,7 @@ if __name__ == '__main__':
         model='plane',
         scale=(maze_width * cell_size, 1, maze_height * cell_size),
         texture=maze.current_theme['textures']['floor'],
-        texture_scale=(maze_width, maze_height),
+        texture_scale=(maze_width*4, maze_height*4),
         collider='box'
     )
     ground.color = maze.current_theme['colors']['floor']
@@ -221,16 +222,17 @@ if __name__ == '__main__':
         model='plane',
         scale=(maze_width * cell_size, 1, maze_height * cell_size),
         texture=maze.current_theme['textures']['ceiling'],
-        texture_scale=(maze_width, maze_height),
+        texture_scale=(maze_width*4, maze_height*4),
         collider='box',
         rotation_x=180
     )
     ceiling.color = maze.current_theme['colors']['ceiling']
     ceiling.position = Vec3(
         (maze_width * cell_size) / 2 - cell_size/2,
-        cell_size,
+        cell_size/2,
         (maze_height * cell_size) / 2 - cell_size/2
     )
+    
     
     if floor_number > 1:
         entry_x, entry_y = maze.entry
@@ -246,13 +248,13 @@ if __name__ == '__main__':
         model='sphere',
         color=color.red,
         scale=cell_size * 0.5,
-        position=Vec3(exit_x * cell_size, cell_size / 2, exit_y * cell_size)
+        position=Vec3(exit_x * cell_size, -2 , exit_y * cell_size)
     )
 
     player = CustomFirstPersonController()
     player.position = Vec3(
         maze.entry[0] * cell_size,
-        cell_size /2,
+        -2,
         maze.entry[1] * cell_size
     )
     Sky()
@@ -310,7 +312,7 @@ if __name__ == '__main__':
 
     def reset_player():
         print("🏃‍♂️ Regresando al inicio...")
-        player.position = Vec3(maze.entry[0] * cell_size, cell_size / 2, maze.entry[1] * cell_size)
+        player.position = Vec3(maze.entry[0] * cell_size, -2, maze.entry[1] * cell_size)
 
 
     # Minimapa

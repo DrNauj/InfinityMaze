@@ -5,7 +5,7 @@ import random
 import os
 
 def load_custom_texture(texture_name):
-    ruta_absoluta = os.path.abspath(os.path.join('assets', 'texture', texture_name))
+    ruta_absoluta = os.path.abspath(os.path.join('assets', 'textures', texture_name))
     if not os.path.exists(ruta_absoluta):
         print(f"ADVERTENCIA: No se encontró la textura en {ruta_absoluta}")
         return None
@@ -84,51 +84,62 @@ class TextureTheme:
         return self.get_theme(theme_name)
 
 class Maze:
-    def __init__(self, width, height, cell_size=2, theme_manager=None):
-        self.width = width
-        self.height = height
+    def __init__(self, width, height, cell_size=4, theme_manager=None):
+        self.width = width * 3  # Multiplicamos por 3 para la nueva escala
+        self.height = height * 3
+        self.base_width = width  # Guardamos el tamaño base para el minimapa
+        self.base_height = height
         self.cell_size = cell_size
         self.theme_manager = theme_manager or TextureTheme()
-        self.current_theme = self.theme_manager.get_theme('cave')  # Puedes cambiar el tema aquí
-        self.maze = [[0 for _ in range(width)] for _ in range(height)]
-        self.entry = (1, 1)
-        self.exit = (width - 2, height - 2)
-        self.generate_maze()
-        self.maze[self.entry[1]][self.entry[0]] = 1
-        self.maze[self.exit[1]][self.exit[0]] = 1
+        self.current_theme = self.theme_manager.get_theme('cave')
+        self.maze = [[0 for _ in range(self.width)] for _ in range(self.height)]
+        # Ajustamos entrada y salida a la nueva escala
+        self.entry = (4, 4)  # (1*4, 1*4) para mantener la proporción
+        self.exit = (self.width - 8, self.height - 8)  # Ajustado para la nueva escala
+        self.generate_maze_3x3()
 
-    def generate_maze(self):
+    def generate_maze_3x3(self):
+        base_maze = [[0 for _ in range(self.base_width)] for _ in range(self.base_height)]
         start_x, start_y = 1, 1
-        self.maze[start_y][start_x] = 1
+        base_maze[start_y][start_x] = 1
         stack = [(start_x, start_y)]
+
         while stack:
             x, y = stack[-1]
             neighbors = []
             for dx, dy in [(2, 0), (-2, 0), (0, 2), (0, -2)]:
                 nx, ny = x + dx, y + dy
-                if 0 < nx < self.width - 1 and 0 < ny < self.height - 1:
-                    if self.maze[ny][nx] == 0:
+                if 0 < nx < self.base_width - 1 and 0 < ny < self.base_height - 1:
+                    if base_maze[ny][nx] == 0:
                         neighbors.append((nx, ny))
             if neighbors:
                 nx, ny = random.choice(neighbors)
-                self.maze[(y + ny) // 2][(x + nx) // 2] = 1
-                self.maze[ny][nx] = 1
+                base_maze[(y + ny) // 2][(x + nx) // 2] = 1
+                base_maze[ny][nx] = 1
                 stack.append((nx, ny))
             else:
                 stack.pop()
 
+        # Escalamos el laberinto base a 3x3
+        for y in range(self.base_height):
+            for x in range(self.base_width):
+                for dy in range(3):  # Cambiado de 4 a 3
+                    for dx in range(3):
+                        self.maze[y * 3 + dy][x * 3 + dx] = base_maze[y][x]
+
+
     def create_entities(self):
         wall_entities = []
-        for y in range(self.height):
-            for x in range(self.width):
+        for y in range(0, self.height, 4):  # 📌 Ahora salta cada 3 celdas
+            for x in range(0, self.width, 4):
                 if self.maze[y][x] == 0:
-                    pos = Vec3(x * self.cell_size, 0, y * self.cell_size)
+                    pos = Vec3(x * self.cell_size, self.cell_size, y * self.cell_size)
                     texture = self.current_theme['textures']['wall']
                     wall_color = self.current_theme['colors']['wall']
                     wall = Entity(
                         model='cube',
                         position=pos,
-                        scale=Vec3(self.cell_size, self.cell_size * 2, self.cell_size),
+                        scale=Vec3(3, self.cell_size * 2, 3),
                         collider='box'
                     )
                     if texture:
@@ -139,6 +150,7 @@ class Maze:
                         wall.color = wall_color
                     wall_entities.append(wall)
         return wall_entities
+
 
 class CustomFirstPersonController(FirstPersonController):
     def __init__(self, **kwargs):
@@ -194,42 +206,42 @@ if __name__ == '__main__':
     floor_number = 1
     maze_width = 21
     maze_height = 21
-    cell_size = 6
+    cell_size = 1
+
     # Inicializamos el administrador de texturas
     theme_manager = TextureTheme()
     maze = Maze(maze_width, maze_height, cell_size, theme_manager)
     walls = maze.create_entities()
     
-    # Suelo: si la textura es la predeterminada se asigna un color (por ejemplo, gris),
-    # de lo contrario se asigna color.white para no modificar la imagen.
+    # Ajuste del suelo
     ground = Entity(
         model='plane',
-        scale=(maze_width * cell_size, 1, maze_height * cell_size),
+        scale=(maze.width * cell_size, 1, maze.height * cell_size),
         texture=maze.current_theme['textures']['floor'],
-        texture_scale=(maze_width, maze_height),
+        texture_scale=(maze.width, maze.height),  # Ajustado para ver cada celda
         collider='box'
     )
     ground.color = maze.current_theme['colors']['floor']
     ground.position = Vec3(
-        (maze_width * cell_size) / 2 - cell_size/2,
-        -cell_size/2,
-        (maze_height * cell_size) / 2 - cell_size/2
+        (maze.width * cell_size) / 2,
+        0,  # A nivel 0
+        (maze.height * cell_size) / 2
     )
 
-    # Techo
+    # Ajuste del techo
     ceiling = Entity(
         model='plane',
-        scale=(maze_width * cell_size, 1, maze_height * cell_size),
+        scale=(maze.width * cell_size, 1, maze.height * cell_size),
         texture=maze.current_theme['textures']['ceiling'],
-        texture_scale=(maze_width, maze_height),
+        texture_scale=(maze.width, maze.height),  # Ajustado para ver cada celda
         collider='box',
         rotation_x=180
     )
     ceiling.color = maze.current_theme['colors']['ceiling']
     ceiling.position = Vec3(
-        (maze_width * cell_size) / 2 - cell_size/2,
-        cell_size,
-        (maze_height * cell_size) / 2 - cell_size/2
+        (maze.width * cell_size) / 2,
+        4,  # Altura exacta de 4 unidades
+        (maze.height * cell_size) / 2
     )
     
     if floor_number > 1:
@@ -241,22 +253,26 @@ if __name__ == '__main__':
             position=Vec3(entry_x * cell_size, cell_size / 2, entry_y * cell_size)
         )
 
+    # Marcador de salida más visible
     exit_x, exit_y = maze.exit
     exit_marker = Entity(
         model='sphere',
         color=color.red,
-        scale=cell_size * 0.5,
-        position=Vec3(exit_x * cell_size, cell_size / 2, exit_y * cell_size)
+        scale=cell_size * 0.7,  # Marcador más grande
+        position=Vec3(exit_x * cell_size, cell_size, exit_y * cell_size)
     )
 
+    # Ajuste del jugador
     player = CustomFirstPersonController()
     player.position = Vec3(
         maze.entry[0] * cell_size,
-        cell_size /2,
+        1,  # Altura del jugador ajustada a nivel del suelo
         maze.entry[1] * cell_size
     )
+    
+    # Configuración de la cámara
     Sky()
-    camera.fov = 90
+    camera.fov = 85  # FOV ligeramente reducido para mejor visibilidad
     
     # Crear un botón en el suelo como trampa
     trap_button = Entity(
@@ -274,59 +290,48 @@ if __name__ == '__main__':
     # Generar trampas en posiciones aleatorias del camino
     for _ in range(NUM_TRAPS):
         while True:
-            x = random.randint(1, maze_width - 2)  # Evitar bordes
-            y = random.randint(1, maze_height - 2)
+            x = random.randint(2, maze.width - 3)
+            y = random.randint(2, maze.height - 3)
 
-            if maze.maze[y][x] == 1:  # Solo colocar en caminos
+            if maze.maze[y][x] == 1:
                 trap_button = Entity(
                     model='cube',
-                    scale=(cell_size * 0.6, 0.2, cell_size * 0.6),  # Más grande para mejor detección
-                    position=Vec3(x * cell_size, -cell_size / 2 + 0.1, y * cell_size),
+                    scale=(cell_size * 0.5, 0.2, cell_size * 0.5),
+                    position=Vec3(x * cell_size, 0.1, y * cell_size),  # Justo sobre el suelo
                     color=color.red,
                     collider='box'
                 )
                 trap_buttons.append(trap_button)
-                break  # Salir del bucle al encontrar una posición válida
+                break
 
     # Función para verificar si el jugador pisa una trampa
     def check_traps():
         for trap in trap_buttons:
             collision = player.intersects(trap)
-
-            # Depuración: Ver si la colisión está ocurriendo
             if collision.hit:
-                print(f"✅ Trampa activada en {trap.position} - Colisión detectada con el jugador.")
-
-                # Hacer que el botón baje como indicación visual
-                trap.animate_position(trap.position + Vec3(0, -0.1, 0), duration=0.2, curve=curve.linear)
-
-                # Esperar 0.5 segundos antes de teletransportar al jugador
+                trap.animate_position(trap.position + Vec3(0, -0.1, 0), duration=0.2)
                 invoke(reset_player, delay=0.5)
-
-                return  # Evita activar múltiples trampas a la vez
-
-        print("❌ No se detectó ninguna colisión con las trampas.")
-
+                return
 
     def reset_player():
-        print("🏃‍♂️ Regresando al inicio...")
-        player.position = Vec3(maze.entry[0] * cell_size, cell_size / 2, maze.entry[1] * cell_size)
+        player.position = Vec3(maze.entry[0] * cell_size, cell_size, maze.entry[1] * cell_size)
 
 
     # Minimapa
     minimap_container = Entity(parent=camera.ui, name='minimap_container')
-    minimap_container.position = (0.73, 0.35)
-    minimap_container.scale = (0.25, 0.25)
+    minimap_container.position = (0.73, 0.35)  # Posición ajustada
+    minimap_container.scale = (0.25, 0.25)     # Tamaño reducido
 
     cell_w = 1 / maze.width
     cell_h = 1 / maze.height
 
     minimap_cells = []
-    for y in range(maze.height):
-        for x in range(maze.width):
+    for y in range(maze.base_height):
+        for x in range(maze.base_width):
             ui_x = -0.5 + cell_w/2 + x * cell_w
             ui_y = 0.5 - cell_h/2 - y * cell_h
-            cell_color = color.white if maze.maze[y][x] == 1 else color.black
+            # Verificamos el estado de la celda 4x4 correspondiente
+            cell_color = color.white if maze.maze[y*3][x*3] == 1 else color.black
             cell = Entity(
                 parent=minimap_container,
                 model='quad',
@@ -347,11 +352,11 @@ if __name__ == '__main__':
 
     def update():
         check_traps()
-        px = int((player.position.x + cell_size/2) / cell_size)
-        py = int((player.position.z + cell_size/2) / cell_size)
-        px = clamp(px, 0, maze.width - 1)
-        py = clamp(py, 0, maze.height - 1)        
+        px = int((player.position.x + cell_size/2) / (cell_size * 4))
+        py = int((player.position.z + cell_size/2) / (cell_size * 4))
+        px = clamp(px, 0, maze.base_width - 1)
+        py = clamp(py, 0, maze.base_height - 1)
         ui_x = -0.5 + cell_w/2 + px * cell_w
-        ui_y = 0.5 - cell_h/2 - py * cell_h        
+        ui_y = 0.5 - cell_h/2 - py * cell_h
         player_marker.position = (ui_x, ui_y)
     app.run()
