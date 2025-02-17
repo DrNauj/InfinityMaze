@@ -30,22 +30,98 @@ class CustomFirstPersonController(FirstPersonController):
         super().update()
         self.camera_pivot.y = lerp(self.camera_pivot.y, self.target_height, time.dt * 8)
 
-class MazeGame:
+class MazeGame(Entity):
     def __init__(self):
+        super().__init__()
         self.app = Ursina()
         self.setup_window()
         self.theme_manager = TextureTheme()
         self.current_floor = 1
         self.is_paused = False
-        self.setup_maze()
+
+        # Diccionario para almacenar los Maze precargados
+        self.preloaded_floors = {}
+        self.preload_floors()  # Pre-carga según el piso actual
+
+        self.setup_maze()     # Usa el Maze precargado del piso actual
         self.setup_player()
         self.setup_minimap()
         self.setup_sky()
         self.setup_pause_menu()
+
+        # Registrar teclas: Escape para pausa, Page Up para siguiente piso, Page Down para piso anterior.
+        self.app.accept('escape', self.toggle_pause)
+        self.app.accept('page up', self.next_floor)
+        self.app.accept('page down', self.prev_floor)
+
         self.app.taskMgr.add(self.update_task, "update_task")
 
+    def preload_floors(self):
+        # Determinar rango a precargar:
+        # Si estamos en piso 1, precargamos 1 a 3; si no, precargamos desde max(1, current_floor-2) hasta current_floor+2.
+        if self.current_floor == 1:
+            floor_min = 1
+            floor_max = 3
+        else:
+            floor_min = max(1, self.current_floor - 2)
+            floor_max = self.current_floor + 2
+
+        # Precargar los pisos en ese rango si no están en memoria
+        for floor in range(floor_min, floor_max + 1):
+            if floor not in self.preloaded_floors:
+                self.preloaded_floors[floor] = Maze(
+                    width=21,
+                    height=21,
+                    cell_size=8,
+                    theme_manager=self.theme_manager,
+                    floor_number=floor
+                )
+        # Eliminar pisos fuera del rango para liberar memoria
+        floors_to_remove = [f for f in self.preloaded_floors if f < floor_min or f > floor_max]
+        for f in floors_to_remove:
+            del self.preloaded_floors[f]
+
+    def go_to_floor(self, floor):
+        # Destruir entidades del piso actual
+        for group in self.maze_entities.values():
+            if isinstance(group, list):
+                for entity in group:
+                    destroy(entity)
+            else:
+                destroy(group)
+        for cell in self.minimap_cells:
+            destroy(cell)
+        self.minimap_cells.clear()
+        destroy(self.player_marker)
+        # Seleccionar el Maze precargado
+        self.maze = self.preloaded_floors[floor]
+        self.maze_entities = self.maze.create_maze_entities()
+        self.player.position = self.maze.get_player_start_position()
+        self.setup_minimap()
+
+    def next_floor(self):
+        self.current_floor += 1
+        self.preload_floors()
+        self.go_to_floor(self.current_floor)
+        print(f"🆙 Avanzando al piso {self.current_floor}")
+
+    def prev_floor(self):
+        if self.current_floor > 1:
+            self.current_floor -= 1
+            self.preload_floors()
+            self.go_to_floor(self.current_floor)
+            print(f"⬇️ Retrocediendo al piso {self.current_floor}")
+        else:
+            print("⚠️ Ya estás en el piso 1.")
+
+    def restart_game(self):
+        self.current_floor = 1
+        self.preload_floors()
+        self.go_to_floor(1)
+        self.toggle_pause()
+        print("🔄 Juego reiniciado: piso 1.")
+
     def setup_pause_menu(self):
-        # Crear el contenedor del menú de pausa
         self.pause_menu = Entity(
             parent=camera.ui,
             model='quad',
@@ -53,15 +129,10 @@ class MazeGame:
             color=color.black66,
             visible=False
         )
-        
-        # Título del menú
         Text("PAUSE MENU", parent=self.pause_menu, y=0.2, scale=2, origin=(0, 0))
-        
-        # Botones del menú
         button_width = 0.3
         button_height = 0.05
-        
-        # Botón para alternar pantalla completa
+
         self.fullscreen_button = Button(
             parent=self.pause_menu,
             text='Toggle Fullscreen',
@@ -70,8 +141,7 @@ class MazeGame:
             color=color.azure
         )
         self.fullscreen_button.on_click = self.toggle_fullscreen
-        
-        # Botón para ajustar resolución
+
         self.resolution_button = Button(
             parent=self.pause_menu,
             text='Resolution: 1280x720',
@@ -80,8 +150,7 @@ class MazeGame:
             color=color.azure
         )
         self.resolution_button.on_click = self.cycle_resolution
-        
-        # Botón para reiniciar el juego
+
         self.restart_button = Button(
             parent=self.pause_menu,
             text='Restart Game',
@@ -90,8 +159,7 @@ class MazeGame:
             color=color.orange
         )
         self.restart_button.on_click = self.restart_game
-        
-        # Botón para salir
+
         self.quit_button = Button(
             parent=self.pause_menu,
             text='Quit Game',
@@ -100,47 +168,28 @@ class MazeGame:
             color=color.red
         )
         self.quit_button.on_click = self.quit_game
-        
-        # Lista de resoluciones disponibles
-        self.resolutions = [
-            (1280, 720),
-            (1600, 900),
-            (1920, 1080)
-        ]
+
+        self.resolutions = [(1280,720), (1600,900), (1920,1080)]
         self.current_resolution_index = 0
-    
+
     def toggle_pause(self):
         self.is_paused = not self.is_paused
         self.pause_menu.visible = self.is_paused
-        
-        # Desactivar/activar el control del jugador
         self.player.enabled = not self.is_paused
-        
-        # Mostrar/ocultar el cursor
+        mouse.visible = self.is_paused
         mouse.locked = not self.is_paused
-        
+
     def toggle_fullscreen(self):
         window.fullscreen = not window.fullscreen
-        
+
     def cycle_resolution(self):
         self.current_resolution_index = (self.current_resolution_index + 1) % len(self.resolutions)
-        new_resolution = self.resolutions[self.current_resolution_index]
-        window.size = new_resolution
-        self.resolution_button.text = f'Resolution: {new_resolution[0]}x{new_resolution[1]}'
-        
-    def restart_game(self):
-        self.current_floor = 1
-        self.setup_maze()
-        self.player.position = self.maze.get_player_start_position()
-        self.setup_minimap()
-        self.toggle_pause()
-        
+        new_res = self.resolutions[self.current_resolution_index]
+        window.size = new_res
+        self.resolution_button.text = f'Resolution: {new_res[0]}x{new_res[1]}'
+
     def quit_game(self):
         application.quit()
-    
-    def input(self, key):
-        if key == 'escape':
-            self.toggle_pause()
 
     def update_task(self, task):
         if not self.is_paused:
@@ -151,17 +200,11 @@ class MazeGame:
         window.borderless = False
         window.fullscreen = False
         window.fps_counter.enabled = True
-        window.exit_button.visible = False
         camera.fov = 90
 
     def setup_maze(self):
-        self.maze = Maze(
-            width=21,
-            height=21,
-            cell_size=8,
-            theme_manager=self.theme_manager,
-            floor_number=self.current_floor
-        )
+        # Usa el Maze precargado para el piso actual
+        self.maze = self.preloaded_floors[self.current_floor]
         self.maze_entities = self.maze.create_maze_entities()
 
     def setup_player(self):
@@ -173,7 +216,7 @@ class MazeGame:
         self.minimap_container.position = Vec2(0.73, 0.35)
         self.minimap_container.scale = Vec2(0.25, 0.25)
         cell_w = 1.0 / self.maze.width
-        cell_h = 1.0 / self.maze.height        
+        cell_h = 1.0 / self.maze.height
         self.minimap_cells = []
         for y in range(self.maze.height):
             for x in range(self.maze.width):
@@ -196,8 +239,8 @@ class MazeGame:
             scale=(max(cell_w, cell_h) * 0.8, max(cell_w, cell_h) * 0.8),
             z=-0.01
         )
-        self.cell_w = cell_w  # Guardar el ancho de la celda
-        self.cell_h = cell_h  # Guardar la altura de la celda
+        self.cell_w = cell_w
+        self.cell_h = cell_h
 
     def setup_sky(self):
         Sky()
@@ -208,28 +251,22 @@ class MazeGame:
 
     def check_traps(self):
         for trap in self.maze_entities['traps']:
-            # Calculamos la distancia entre el jugador y la trampa
+            if not trap:  # Verificar si la trampa existe
+                continue
             distance = (self.player.position - trap.position).length()
-            if distance < self.maze.cell_size * 0.4:  # Ajusta este valor según necesites
+            if distance < self.maze.cell_size * 0.4:
                 print(f"✅ Trampa activada en {trap.position}")
                 trap.animate_position(trap.position + Vec3(0, -0.1, 0), duration=0.2, curve=curve.linear)
                 self.reset_player()
                 return
 
     def update_minimap(self):
-        # Calcular la posición del jugador en coordenadas del laberinto
         px = int((self.player.position.x + self.maze.cell_size/2) / self.maze.cell_size)
         py = int((self.player.position.z + self.maze.cell_size/2) / self.maze.cell_size)
-        
-        # Asegurar que las coordenadas estén dentro de los límites
         px = clamp(px, 0, self.maze.width - 1)
         py = clamp(py, 0, self.maze.height - 1)
-        
-        # Convertir a coordenadas UI para el minimapa
         ui_x = -0.5 + self.cell_w/2 + px * self.cell_w
         ui_y = 0.5 - self.cell_h/2 - py * self.cell_h
-        
-        # Actualizar la posición del marcador del jugador
         if hasattr(self, 'player_marker'):
             self.player_marker.position = Vec3(ui_x, ui_y, -0.01)
 
@@ -239,31 +276,6 @@ class MazeGame:
         if (px, py) == self.maze.exit:
             print("🎯 ¡Has llegado a la salida!")
             self.next_floor()
-
-    def next_floor(self):
-        # Destruir entidades del piso actual
-        for entity_group in self.maze_entities.values():
-            if isinstance(entity_group, list):
-                for entity in entity_group:
-                    destroy(entity)
-            else:
-                destroy(entity_group)
-        
-        # Limpiar el minimapa
-        for cell in self.minimap_cells:
-            destroy(cell)
-        self.minimap_cells.clear()
-        destroy(self.player_marker)
-        
-        # Incrementar el número de piso
-        self.current_floor += 1
-        
-        # Generar nuevo piso
-        self.setup_maze()
-        self.player.position = self.maze.get_player_start_position()
-        self.setup_minimap()
-        
-        print(f"🆙 Avanzando al piso {self.current_floor}")
 
     def game_update(self):
         self.check_traps()
