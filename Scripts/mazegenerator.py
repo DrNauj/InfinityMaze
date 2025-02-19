@@ -160,9 +160,9 @@ class Maze:
                         scale=(self.cell_size, 0.2, self.cell_size),
                         position=Vec3(x * self.cell_size, -self.cell_size/2, y * self.cell_size),
                         texture=self.current_theme['textures']['floor'],
+                        texture_scale=(4, 4),  # Ajustamos la escala de la textura a 4x4
                         color=self.current_theme['colors']['floor'],
                         collider='box'
-                        # Se elimina parent=self.ground para que cada sección sea independiente
                     )
                     self.floor_sections.append({'entity': section, 'position': (x, y)})
 
@@ -211,19 +211,19 @@ class Maze:
                     distance_2d((x, y), self.entry) > 2 and 
                     distance_2d((x, y), self.exit) > 2):
 
-                    # Botón de la trampa (sin cambios)
+                    # Botón de la trampa (más pequeño y centrado)
                     trap_button = Entity(
                         model='cube',
-                        scale=(self.cell_size * 0.6, 0.2, self.cell_size * 0.6),
+                        scale=(self.cell_size * 0.4, 0.2, self.cell_size * 0.4),  # Reducido a 0.4
                         position=Vec3(x * self.cell_size, -self.cell_size/2 + 0.1, y * self.cell_size),
                         color=color.red,
                         collider='box'
                     )
 
-                    # Crear el hoyo aquí explícitamente
+                    # Crear el hoyo más pequeño y centrado
                     hole = Entity(
                         model='cube',
-                        scale=(self.cell_size, 0.1, self.cell_size),
+                        scale=(self.cell_size * 0.5, 0.1, self.cell_size * 0.5),  # Reducido a 0.5 (2x2)
                         position=Vec3(x * self.cell_size, -self.cell_size/2 - 0.1, y * self.cell_size),
                         color=color.black66,
                         visible=False
