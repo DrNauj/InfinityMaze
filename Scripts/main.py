@@ -90,9 +90,14 @@ class MazeGame(Entity):
                 for entity in group:
                     if isinstance(entity, dict):  # Para las trampas
                         destroy(entity['button'])
-                        destroy(entity['hole'])
+                        if 'hole' in entity:
+                            destroy(entity['hole'])
                         if 'floor_section' in entity:
+                            # La sección del piso ahora es directamente una Entity
                             destroy(entity['floor_section'])
+                            # Destruir los bordes si existen
+                            for border in entity.get('borders', []):
+                                destroy(border)
                     else:
                         destroy(entity)
             else:
@@ -259,7 +264,7 @@ class MazeGame(Entity):
     def reset_player(self):
         print("🏃‍♂️ Regresando al inicio...")
         # Añadir una pequeña pausa antes de reiniciar
-        invoke(self._delayed_reset, delay=0.5)
+        invoke(self._delayed_reset, delay=0.3)
     
     def _delayed_reset(self):
         self.player.position = self.maze.get_player_start_position()
@@ -284,26 +289,26 @@ class MazeGame(Entity):
                 )
                 trap['button'].animate_color(color.clear, duration=0.2)
                 
-                # Animar y destruir la sección del piso
+                # Animar y destruir solo la sección central del piso
                 if trap['floor_section']:
+                    # Animar la sección central
                     trap['floor_section'].animate_position(
-                        trap['floor_section'].position + Vec3(0, -2, 0),  # Caída más pronunciada
+                        trap['floor_section'].position + Vec3(0, -2, 0),
                         duration=0.3,
                         curve=curve.linear
                     )
                     trap['floor_section'].animate_color(color.clear, duration=0.3)
                     invoke(destroy, trap['floor_section'], delay=0.4)
                 
-                # Hacer visible el hoyo y ajustar su posición
+                # Hacer visible el hoyo
                 trap['hole'].position = trap['button'].position + Vec3(0, -0.5, 0)
                 trap['hole'].visible = True
-                trap['hole'].color = color.black66  # Más visible
+                trap['hole'].color = color.black66
                 
                 # Programar la destrucción del botón
                 invoke(destroy, trap['button'], delay=0.3)
                 
                 return
-
     def check_player_boundaries(self):
         if not self.maze.check_maze_boundaries(self.player.position):
             print("⚠️ Jugador fuera de los límites o caído en trampa")

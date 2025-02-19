@@ -149,22 +149,33 @@ class Maze:
                     self.wall_entities.append(wall)
 
     def create_floor(self):
-        # Creamos un contenedor vacío para el piso (opcional)
-        self.ground = Entity()  
+        self.ground = Entity()
         self.floor_sections = []
+
+        # Primero creamos todas las secciones del piso normales (4x4)
         for y in range(self.height):
             for x in range(self.width):
-                if self.maze[y][x] == 1:  # Solo para celdas transitables
+                if self.maze[y][x] == 1:
+                    pos_x = x * self.cell_size
+                    pos_z = y * self.cell_size
+                    
+                    # Crear una única sección 4x4 para celdas normales
                     section = Entity(
+                        parent=self.ground,
                         model='cube',
                         scale=(self.cell_size, 0.2, self.cell_size),
-                        position=Vec3(x * self.cell_size, -self.cell_size/2, y * self.cell_size),
+                        position=Vec3(pos_x, -self.cell_size/2, pos_z),
                         texture=self.current_theme['textures']['floor'],
-                        texture_scale=(4, 4),  # Ajustamos la escala de la textura a 4x4
+                        texture_scale=(4, 4),  # Escala 4x4 para celdas normales
                         color=self.current_theme['colors']['floor'],
                         collider='box'
                     )
-                    self.floor_sections.append({'entity': section, 'position': (x, y)})
+
+                    self.floor_sections.append({
+                        'entity': section,
+                        'borders': [],  # Lista vacía para mantener la estructura
+                        'position': (x, y)
+                    })
 
     def create_ceiling(self):
         self.ceiling = Entity(
@@ -201,8 +212,10 @@ class Maze:
         )
         self.markers.append(exit_marker)
 
-    def create_traps(self, num_traps=10):
+    def create_traps(self, num_traps=9):
         self.trap_buttons = []
+        section_size = self.cell_size / 4  # Para las secciones divididas
+
         for _ in range(num_traps):
             while True:
                 x = random.randint(1, self.width - 2)
@@ -211,35 +224,78 @@ class Maze:
                     distance_2d((x, y), self.entry) > 2 and 
                     distance_2d((x, y), self.exit) > 2):
 
-                    # Botón de la trampa (más pequeño y centrado)
+                    # Encontrar y destruir la sección original del piso
+                    for section in self.floor_sections:
+                        if section['position'] == (x, y):
+                            destroy(section['entity'])
+                            self.floor_sections.remove(section)
+                            break
+
+                    pos_x = x * self.cell_size
+                    pos_z = y * self.cell_size
+                    
+                    sections = []
+                    # Crear las secciones del borde para la trampa
+                    for row in range(4):
+                        for col in range(4):
+                            is_center = (1 <= row <= 2) and (1 <= col <= 2)
+                            if not is_center:
+                                border = Entity(
+                                    parent=self.ground,
+                                    model='cube',
+                                    scale=(section_size, 0.2, section_size),
+                                    position=Vec3(
+                                        pos_x - self.cell_size/2 + section_size/2 + col * section_size,
+                                        -self.cell_size/2,
+                                        pos_z - self.cell_size/2 + section_size/2 + row * section_size
+                                    ),
+                                    texture=self.current_theme['textures']['floor'],
+                                    texture_scale=(1, 1),
+                                    color=self.current_theme['colors']['floor'],
+                                    collider='box'
+                                )
+                                sections.append(border)
+
+                    # Crear la sección central (2x2)
+                    center = Entity(
+                        parent=self.ground,
+                        model='cube',
+                        scale=(section_size * 2, 0.2, section_size * 2),
+                        position=Vec3(pos_x, -self.cell_size/2, pos_z),
+                        texture=self.current_theme['textures']['floor'],
+                        texture_scale=(2, 2),
+                        color=self.current_theme['colors']['floor'],
+                        collider='box'
+                    )
+
+                    # Agregar la nueva sección dividida
+                    self.floor_sections.append({
+                        'entity': center,
+                        'borders': sections,
+                        'position': (x, y)
+                    })
+
+                    # Crear el botón y el hoyo de la trampa
                     trap_button = Entity(
                         model='cube',
-                        scale=(self.cell_size * 0.4, 0.2, self.cell_size * 0.4),  # Reducido a 0.4
-                        position=Vec3(x * self.cell_size, -self.cell_size/2 + 0.1, y * self.cell_size),
+                        scale=(self.cell_size * 0.4, 0.2, self.cell_size * 0.4),
+                        position=Vec3(pos_x, -self.cell_size/2 + 0.1, pos_z),
                         color=color.red,
                         collider='box'
                     )
 
-                    # Crear el hoyo más pequeño y centrado
                     hole = Entity(
                         model='cube',
-                        scale=(self.cell_size * 0.5, 0.1, self.cell_size * 0.5),  # Reducido a 0.5 (2x2)
-                        position=Vec3(x * self.cell_size, -self.cell_size/2 - 0.1, y * self.cell_size),
+                        scale=(self.cell_size * 0.5, 0.1, self.cell_size * 0.5),
+                        position=Vec3(pos_x, -self.cell_size/2 - 0.1, pos_z),
                         color=color.black66,
                         visible=False
                     )
 
-                    # Buscar la sección del piso
-                    floor_section = None
-                    for section in self.floor_sections:
-                        if section['position'] == (x, y):
-                            floor_section = section['entity']
-                            break
-
                     self.trap_buttons.append({
                         'button': trap_button,
-                        'hole': hole,  # Asegurarse de incluir el hoyo
-                        'floor_section': floor_section,
+                        'hole': hole,
+                        'floor_section': center,
                         'activated': False,
                         'position': (x, y)
                     })
