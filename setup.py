@@ -26,6 +26,5 @@ setup(
     executables=[Executable("Scripts/main.py", base=base, target_name="InfinityMaze.exe")]
 )
 
-
-
+# Para compilar el script ejecuta el siguiente comando
 #python setup.py build_exe
