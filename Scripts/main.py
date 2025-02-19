@@ -50,6 +50,7 @@ class MazeGame(Entity):
         self.setup_minimap()
         self.setup_sky()
         self.setup_pause_menu()
+        self.setup_lighting()  # Añadir después de setup_sky()
 
         # Registrar teclas: Escape para pausa, Page Up para siguiente piso, Page Down para piso anterior.
         self.app.accept('escape', self.toggle_pause)
@@ -108,6 +109,7 @@ class MazeGame(Entity):
             destroy(cell)
         self.minimap_cells.clear()
         destroy(self.player_marker)
+        destroy(self.minimap_bg)  # antes de crear el nuevo minimapa
         
         # Configurar nuevo piso
         self.maze = self.preloaded_floors[floor]
@@ -217,6 +219,13 @@ class MazeGame(Entity):
         window.fullscreen = False
         window.fps_counter.enabled = True
         camera.fov = 90
+        window.vsync = False
+        window.fps_counter.enabled = True
+        camera.fov = 90
+        
+        # Activar el modo de iluminación avanzada
+        from ursina.shaders import lit_with_shadows_shader
+        scene.shader = lit_with_shadows_shader
 
     def setup_maze(self):
         # Usa el Maze precargado para el piso actual
@@ -228,17 +237,29 @@ class MazeGame(Entity):
         self.player.position = self.maze.get_player_start_position()
 
     def setup_minimap(self):
+        # Crear un fondo semitransparente para el minimapa
+        self.minimap_bg = Entity(
+            parent=camera.ui,
+            model='quad',
+            position=Vec2(0.73, 0.35),
+            scale=Vec2(0.25, 0.25),
+            color=color.black50,  # Color negro con 50% de transparencia
+            z=0.1
+        )
+
         self.minimap_container = Entity(parent=camera.ui)
         self.minimap_container.position = Vec2(0.73, 0.35)
         self.minimap_container.scale = Vec2(0.25, 0.25)
         cell_w = 1.0 / self.maze.width
         cell_h = 1.0 / self.maze.height
         self.minimap_cells = []
+        
         for y in range(self.maze.height):
             for x in range(self.maze.width):
-                ui_x = -0.5 + cell_w/2 + x * cell_w
+                # Invertir la coordenada X para las celdas
+                ui_x = 0.5 - cell_w/2 - x * cell_w
                 ui_y = 0.5 - cell_h/2 - y * cell_h
-                cell_color = color.white if self.maze.maze[y][x] == 1 else color.black
+                cell_color = color.rgba(1, 1, 1, 0.4) if self.maze.maze[y][x] == 1 else color.rgba(0, 0, 0, 0.3)
                 cell = Entity(
                     parent=self.minimap_container,
                     model='quad',
@@ -248,10 +269,11 @@ class MazeGame(Entity):
                     double_sided=True
                 )
                 self.minimap_cells.append(cell)
+                
         self.player_marker = Entity(
             parent=self.minimap_container,
             model='circle',
-            color=color.azure,
+            color=color.rgb(0, 157, 255),  # Azul sólido
             scale=(max(cell_w, cell_h) * 0.8, max(cell_w, cell_h) * 0.8),
             z=-0.01
         )
@@ -260,6 +282,23 @@ class MazeGame(Entity):
 
     def setup_sky(self):
         Sky()
+
+    def setup_lighting(self):
+        # Configurar la niebla para oscurecer el ambiente
+        scene.fog_color = color.black
+        scene.fog_density = 0.18  # Aumentado para más oscuridad
+        
+        # Crear luz puntual que seguirá al jugador
+        self.player_light = PointLight(
+            parent=self.player,
+            color=color.white,
+            position=(0, 2, 0),
+            radius=18,           # Reducido para menos visibilidad
+            shadows=True
+        )
+        
+        # Reducir aún más la luz ambiental
+        scene.ambient_color = color.rgba(0.09, 0.09, 0.09, 1)
 
     def reset_player(self):
         print("🏃‍♂️ Regresando al inicio...")
@@ -319,7 +358,8 @@ class MazeGame(Entity):
         py = int((self.player.position.z + self.maze.cell_size/2) / self.maze.cell_size)
         px = clamp(px, 0, self.maze.width - 1)
         py = clamp(py, 0, self.maze.height - 1)
-        ui_x = -0.5 + self.cell_w/2 + px * self.cell_w
+        # Invertir la coordenada X para corregir el efecto espejo
+        ui_x = 0.5 - self.cell_w/2 - px * self.cell_w
         ui_y = 0.5 - self.cell_h/2 - py * self.cell_h
         if hasattr(self, 'player_marker'):
             self.player_marker.position = Vec3(ui_x, ui_y, -0.01)

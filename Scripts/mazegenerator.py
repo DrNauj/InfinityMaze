@@ -1,6 +1,7 @@
 from ursina import *
 import random
 import os
+from ursina.shaders import lit_with_shadows_shader  # Añadir esta importación al inicio
 
 class TextureTheme:
     def __init__(self):
@@ -82,6 +83,9 @@ class Maze:
         self.wall_entities = []
         self.trap_buttons = []
         self.markers = []
+        self.floor_sections = []
+        self.ground = None  # Inicializar como None
+        self.ceiling = None
         self.generate_maze()
         self.set_random_entry_exit()
         self.maze[self.entry[1]][self.entry[0]] = 1
@@ -114,18 +118,37 @@ class Maze:
                 stack.pop()
 
     def create_maze_entities(self):
-        self.create_walls()
-        self.create_floor()
-        self.create_ceiling()
-        self.create_markers()
-        self.create_traps()
-        return {
-            'walls': self.wall_entities,
-            'floor': self.ground,
-            'ceiling': self.ceiling,
-            'markers': self.markers,
-            'traps': self.trap_buttons
+        entities = {
+            'walls': [],
+            'floor': None,
+            'ceiling': None,
+            'markers': [],
+            'traps': []
         }
+        
+        # Primero crear el piso
+        self.create_floor()  # Esto crea self.ground
+        
+        # Luego crear las paredes
+        self.create_walls()
+        entities['walls'] = self.wall_entities
+        
+        # Crear el techo
+        self.create_ceiling()
+        
+        # Crear los marcadores
+        self.create_markers()
+        entities['markers'] = self.markers
+        
+        # Finalmente crear las trampas
+        self.create_traps()
+        entities['traps'] = self.trap_buttons
+        
+        # Asignar las entidades creadas
+        entities['floor'] = self.ground
+        entities['ceiling'] = self.ceiling
+        
+        return entities
 
     def create_walls(self):
         for y in range(self.height):
@@ -135,10 +158,14 @@ class Maze:
                     texture = self.current_theme['textures']['wall']
                     wall_color = self.current_theme['colors']['wall']
                     wall = Entity(
+                        parent=self.ground,
                         model='cube',
-                        position=pos,
                         scale=Vec3(self.cell_size, self.cell_size, self.cell_size),
-                        collider='box'
+                        position=Vec3(x * self.cell_size, 0, y * self.cell_size),
+                        texture=texture,
+                        color=wall_color,
+                        collider='box',
+                        shader=lit_with_shadows_shader  # Añadir shader
                     )
                     if texture:
                         wall.texture = texture
@@ -152,28 +179,27 @@ class Maze:
         self.ground = Entity()
         self.floor_sections = []
 
-        # Primero creamos todas las secciones del piso normales (4x4)
         for y in range(self.height):
             for x in range(self.width):
                 if self.maze[y][x] == 1:
                     pos_x = x * self.cell_size
                     pos_z = y * self.cell_size
                     
-                    # Crear una única sección 4x4 para celdas normales
                     section = Entity(
                         parent=self.ground,
                         model='cube',
                         scale=(self.cell_size, 0.2, self.cell_size),
                         position=Vec3(pos_x, -self.cell_size/2, pos_z),
                         texture=self.current_theme['textures']['floor'],
-                        texture_scale=(4, 4),  # Escala 4x4 para celdas normales
+                        texture_scale=(4, 4),
                         color=self.current_theme['colors']['floor'],
-                        collider='box'
+                        collider='box',
+                        shader=lit_with_shadows_shader
                     )
 
                     self.floor_sections.append({
                         'entity': section,
-                        'borders': [],  # Lista vacía para mantener la estructura
+                        'borders': [],
                         'position': (x, y)
                     })
 

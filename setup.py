@@ -25,3 +25,7 @@ setup(
     options={"build_exe": build_exe_options},
     executables=[Executable("Scripts/main.py", base=base, target_name="InfinityMaze.exe")]
 )
+
+
+
+#python setup.py build_exe

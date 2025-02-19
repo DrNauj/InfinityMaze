@@ -1,6 +1,7 @@
 from ursina import *
 import random
 import os
+from ursina.shaders import lit_with_shadows_shader  # Añadir esta importación al inicio
 
 class TextureTheme:
     def __init__(self):
@@ -79,13 +80,22 @@ class Maze:
         self.theme_manager = theme_manager or TextureTheme()
         self.current_theme = self.theme_manager.get_theme('brick')
         self.maze = [[0 for _ in range(width)] for _ in range(height)]
-        self.entry = (1, 1)
-        self.exit = (width - 2, height - 2)
         self.wall_entities = []
         self.trap_buttons = []
+        self.markers = []
+        self.floor_sections = []
+        self.ground = None  # Inicializar como None
+        self.ceiling = None
         self.generate_maze()
+        self.set_random_entry_exit()
         self.maze[self.entry[1]][self.entry[0]] = 1
         self.maze[self.exit[1]][self.exit[0]] = 1
+
+    def set_random_entry_exit(self):
+        self.entry = (random.randint(1, self.width - 2), random.randint(1, self.height - 2))
+        self.exit = (random.randint(1, self.width - 2), random.randint(1, self.height - 2))
+        while self.exit == self.entry:
+            self.exit = (random.randint(1, self.width - 2), random.randint(1, self.height - 2))
 
     def generate_maze(self):
         start_x, start_y = 1, 1
@@ -108,18 +118,37 @@ class Maze:
                 stack.pop()
 
     def create_maze_entities(self):
-        self.create_walls()
-        self.create_floor()
-        self.create_ceiling()
-        self.create_markers()
-        self.create_traps()
-        return {
-            'walls': self.wall_entities,
-            'floor': self.ground,
-            'ceiling': self.ceiling,
-            'markers': self.markers,
-            'traps': self.trap_buttons
+        entities = {
+            'walls': [],
+            'floor': None,
+            'ceiling': None,
+            'markers': [],
+            'traps': []
         }
+        
+        # Primero crear el piso
+        self.create_floor()  # Esto crea self.ground
+        
+        # Luego crear las paredes
+        self.create_walls()
+        entities['walls'] = self.wall_entities
+        
+        # Crear el techo
+        self.create_ceiling()
+        
+        # Crear los marcadores
+        self.create_markers()
+        entities['markers'] = self.markers
+        
+        # Finalmente crear las trampas
+        self.create_traps()
+        entities['traps'] = self.trap_buttons
+        
+        # Asignar las entidades creadas
+        entities['floor'] = self.ground
+        entities['ceiling'] = self.ceiling
+        
+        return entities
 
     def create_walls(self):
         for y in range(self.height):
@@ -129,10 +158,14 @@ class Maze:
                     texture = self.current_theme['textures']['wall']
                     wall_color = self.current_theme['colors']['wall']
                     wall = Entity(
+                        parent=self.ground,
                         model='cube',
-                        position=pos,
                         scale=Vec3(self.cell_size, self.cell_size, self.cell_size),
-                        collider='box'
+                        position=Vec3(x * self.cell_size, 0, y * self.cell_size),
+                        texture=texture,
+                        color=wall_color,
+                        collider='box',
+                        shader=lit_with_shadows_shader  # Añadir shader
                     )
                     if texture:
                         wall.texture = texture
@@ -143,19 +176,32 @@ class Maze:
                     self.wall_entities.append(wall)
 
     def create_floor(self):
-        self.ground = Entity(
-            model='plane',
-            scale=(self.width * self.cell_size, 1, self.height * self.cell_size),
-            texture=self.current_theme['textures']['floor'],
-            texture_scale=(self.width*4, self.height*4),
-            collider='box'
-        )
-        self.ground.color = self.current_theme['colors']['floor']
-        self.ground.position = Vec3(
-            (self.width * self.cell_size) / 2 - self.cell_size/2,
-            -self.cell_size/2,
-            (self.height * self.cell_size) / 2 - self.cell_size/2
-        )
+        self.ground = Entity()
+        self.floor_sections = []
+
+        for y in range(self.height):
+            for x in range(self.width):
+                if self.maze[y][x] == 1:
+                    pos_x = x * self.cell_size
+                    pos_z = y * self.cell_size
+                    
+                    section = Entity(
+                        parent=self.ground,
+                        model='cube',
+                        scale=(self.cell_size, 0.2, self.cell_size),
+                        position=Vec3(pos_x, -self.cell_size/2, pos_z),
+                        texture=self.current_theme['textures']['floor'],
+                        texture_scale=(4, 4),
+                        color=self.current_theme['colors']['floor'],
+                        collider='box',
+                        shader=lit_with_shadows_shader
+                    )
+
+                    self.floor_sections.append({
+                        'entity': section,
+                        'borders': [],
+                        'position': (x, y)
+                    })
 
     def create_ceiling(self):
         self.ceiling = Entity(
@@ -192,25 +238,118 @@ class Maze:
         )
         self.markers.append(exit_marker)
 
-    def create_traps(self, num_traps=5):
+    def create_traps(self, num_traps=9):
+        self.trap_buttons = []
+        section_size = self.cell_size / 4  # Para las secciones divididas
+
         for _ in range(num_traps):
             while True:
                 x = random.randint(1, self.width - 2)
                 y = random.randint(1, self.height - 2)
-                if self.maze[y][x] == 1:
-                    trap = Entity(
+                if (self.maze[y][x] == 1 and 
+                    distance_2d((x, y), self.entry) > 2 and 
+                    distance_2d((x, y), self.exit) > 2):
+
+                    # Encontrar y destruir la sección original del piso
+                    for section in self.floor_sections:
+                        if section['position'] == (x, y):
+                            destroy(section['entity'])
+                            self.floor_sections.remove(section)
+                            break
+
+                    pos_x = x * self.cell_size
+                    pos_z = y * self.cell_size
+                    
+                    sections = []
+                    # Crear las secciones del borde para la trampa
+                    for row in range(4):
+                        for col in range(4):
+                            is_center = (1 <= row <= 2) and (1 <= col <= 2)
+                            if not is_center:
+                                border = Entity(
+                                    parent=self.ground,
+                                    model='cube',
+                                    scale=(section_size, 0.2, section_size),
+                                    position=Vec3(
+                                        pos_x - self.cell_size/2 + section_size/2 + col * section_size,
+                                        -self.cell_size/2,
+                                        pos_z - self.cell_size/2 + section_size/2 + row * section_size
+                                    ),
+                                    texture=self.current_theme['textures']['floor'],
+                                    texture_scale=(1, 1),
+                                    color=self.current_theme['colors']['floor'],
+                                    collider='box'
+                                )
+                                sections.append(border)
+
+                    # Crear la sección central (2x2)
+                    center = Entity(
+                        parent=self.ground,
                         model='cube',
-                        scale=(self.cell_size * 0.6, 0.2, self.cell_size * 0.6),
-                        position=Vec3(x * self.cell_size, -self.cell_size / 2 + 0.1, y * self.cell_size),
+                        scale=(section_size * 2, 0.2, section_size * 2),
+                        position=Vec3(pos_x, -self.cell_size/2, pos_z),
+                        texture=self.current_theme['textures']['floor'],
+                        texture_scale=(2, 2),
+                        color=self.current_theme['colors']['floor'],
+                        collider='box'
+                    )
+
+                    # Agregar la nueva sección dividida
+                    self.floor_sections.append({
+                        'entity': center,
+                        'borders': sections,
+                        'position': (x, y)
+                    })
+
+                    # Crear el botón y el hoyo de la trampa
+                    trap_button = Entity(
+                        model='cube',
+                        scale=(self.cell_size * 0.4, 0.2, self.cell_size * 0.4),
+                        position=Vec3(pos_x, -self.cell_size/2 + 0.1, pos_z),
                         color=color.red,
                         collider='box'
                     )
-                    self.trap_buttons.append(trap)
+
+                    hole = Entity(
+                        model='cube',
+                        scale=(self.cell_size * 0.5, 0.1, self.cell_size * 0.5),
+                        position=Vec3(pos_x, -self.cell_size/2 - 0.1, pos_z),
+                        color=color.black66,
+                        visible=False
+                    )
+
+                    self.trap_buttons.append({
+                        'button': trap_button,
+                        'hole': hole,
+                        'floor_section': center,
+                        'activated': False,
+                        'position': (x, y)
+                    })
                     break
+
+    def check_maze_boundaries(self, position):
+        x, z = position.x / self.cell_size, position.z / self.cell_size
+        margin = 1
+        # Ajustar el límite vertical para una detección más rápida
+        if (x < -margin or x > self.width + margin or 
+            z < -margin or z > self.height + margin or 
+            position.y < -10):  # Límite vertical más cercano
+            return False
+        return True
 
     def get_player_start_position(self):
         return Vec3(
             self.entry[0] * self.cell_size,
-            -2,
+            0,
             self.entry[1] * self.cell_size
         )
+
+    def check_player_exit(self, player_position):
+        exit_pos = Vec3(self.exit[0] * self.cell_size, 0, self.exit[1] * self.cell_size)
+        if distance(player_position, exit_pos) < self.cell_size:
+            return True
+        return False
+
+# Función auxiliar para calcular distancia 2D
+def distance_2d(pos1, pos2):
+    return ((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2)**0.5
