@@ -79,13 +79,19 @@ class Maze:
         self.theme_manager = theme_manager or TextureTheme()
         self.current_theme = self.theme_manager.get_theme('brick')
         self.maze = [[0 for _ in range(width)] for _ in range(height)]
-        self.entry = (1, 1)
-        self.exit = (width - 2, height - 2)
         self.wall_entities = []
         self.trap_buttons = []
+        self.markers = []
         self.generate_maze()
+        self.set_random_entry_exit()
         self.maze[self.entry[1]][self.entry[0]] = 1
         self.maze[self.exit[1]][self.exit[0]] = 1
+
+    def set_random_entry_exit(self):
+        self.entry = (random.randint(1, self.width - 2), random.randint(1, self.height - 2))
+        self.exit = (random.randint(1, self.width - 2), random.randint(1, self.height - 2))
+        while self.exit == self.entry:
+            self.exit = (random.randint(1, self.width - 2), random.randint(1, self.height - 2))
 
     def generate_maze(self):
         start_x, start_y = 1, 1
@@ -143,19 +149,22 @@ class Maze:
                     self.wall_entities.append(wall)
 
     def create_floor(self):
-        self.ground = Entity(
-            model='plane',
-            scale=(self.width * self.cell_size, 1, self.height * self.cell_size),
-            texture=self.current_theme['textures']['floor'],
-            texture_scale=(self.width*4, self.height*4),
-            collider='box'
-        )
-        self.ground.color = self.current_theme['colors']['floor']
-        self.ground.position = Vec3(
-            (self.width * self.cell_size) / 2 - self.cell_size/2,
-            -self.cell_size/2,
-            (self.height * self.cell_size) / 2 - self.cell_size/2
-        )
+        # Creamos un contenedor vacío para el piso (opcional)
+        self.ground = Entity()  
+        self.floor_sections = []
+        for y in range(self.height):
+            for x in range(self.width):
+                if self.maze[y][x] == 1:  # Solo para celdas transitables
+                    section = Entity(
+                        model='cube',
+                        scale=(self.cell_size, 0.2, self.cell_size),
+                        position=Vec3(x * self.cell_size, -self.cell_size/2, y * self.cell_size),
+                        texture=self.current_theme['textures']['floor'],
+                        color=self.current_theme['colors']['floor'],
+                        collider='box'
+                        # Se elimina parent=self.ground para que cada sección sea independiente
+                    )
+                    self.floor_sections.append({'entity': section, 'position': (x, y)})
 
     def create_ceiling(self):
         self.ceiling = Entity(
@@ -192,25 +201,73 @@ class Maze:
         )
         self.markers.append(exit_marker)
 
-    def create_traps(self, num_traps=5):
+    def create_traps(self, num_traps=10):
+        self.trap_buttons = []
         for _ in range(num_traps):
             while True:
                 x = random.randint(1, self.width - 2)
                 y = random.randint(1, self.height - 2)
-                if self.maze[y][x] == 1:
-                    trap = Entity(
+                if (self.maze[y][x] == 1 and 
+                    distance_2d((x, y), self.entry) > 2 and 
+                    distance_2d((x, y), self.exit) > 2):
+
+                    # Botón de la trampa (sin cambios)
+                    trap_button = Entity(
                         model='cube',
                         scale=(self.cell_size * 0.6, 0.2, self.cell_size * 0.6),
-                        position=Vec3(x * self.cell_size, -self.cell_size / 2 + 0.1, y * self.cell_size),
+                        position=Vec3(x * self.cell_size, -self.cell_size/2 + 0.1, y * self.cell_size),
                         color=color.red,
                         collider='box'
                     )
-                    self.trap_buttons.append(trap)
+
+                    # Crear el hoyo aquí explícitamente
+                    hole = Entity(
+                        model='cube',
+                        scale=(self.cell_size, 0.1, self.cell_size),
+                        position=Vec3(x * self.cell_size, -self.cell_size/2 - 0.1, y * self.cell_size),
+                        color=color.black66,
+                        visible=False
+                    )
+
+                    # Buscar la sección del piso
+                    floor_section = None
+                    for section in self.floor_sections:
+                        if section['position'] == (x, y):
+                            floor_section = section['entity']
+                            break
+
+                    self.trap_buttons.append({
+                        'button': trap_button,
+                        'hole': hole,  # Asegurarse de incluir el hoyo
+                        'floor_section': floor_section,
+                        'activated': False,
+                        'position': (x, y)
+                    })
                     break
+
+    def check_maze_boundaries(self, position):
+        x, z = position.x / self.cell_size, position.z / self.cell_size
+        margin = 1
+        # Ajustar el límite vertical para una detección más rápida
+        if (x < -margin or x > self.width + margin or 
+            z < -margin or z > self.height + margin or 
+            position.y < -10):  # Límite vertical más cercano
+            return False
+        return True
 
     def get_player_start_position(self):
         return Vec3(
             self.entry[0] * self.cell_size,
-            -2,
+            0,
             self.entry[1] * self.cell_size
         )
+
+    def check_player_exit(self, player_position):
+        exit_pos = Vec3(self.exit[0] * self.cell_size, 0, self.exit[1] * self.cell_size)
+        if distance(player_position, exit_pos) < self.cell_size:
+            return True
+        return False
+
+# Función auxiliar para calcular distancia 2D
+def distance_2d(pos1, pos2):
+    return ((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2)**0.5

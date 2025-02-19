@@ -3,8 +3,9 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 from mazegenerator import Maze, TextureTheme
 
 class CustomFirstPersonController(FirstPersonController):
-    def __init__(self, **kwargs):
+    def __init__(self, maze, **kwargs):
         super().__init__(**kwargs)
+        self.maze = maze
         self.normal_speed = 8
         self.sprint_speed = 16
         self.normal_height = 2
@@ -28,6 +29,7 @@ class CustomFirstPersonController(FirstPersonController):
 
     def update(self):
         super().update()
+        # Restauramos la funcionalidad de agacharse
         self.camera_pivot.y = lerp(self.camera_pivot.y, self.target_height, time.dt * 8)
 
 class MazeGame(Entity):
@@ -86,14 +88,23 @@ class MazeGame(Entity):
         for group in self.maze_entities.values():
             if isinstance(group, list):
                 for entity in group:
-                    destroy(entity)
+                    if isinstance(entity, dict):  # Para las trampas
+                        destroy(entity['button'])
+                        destroy(entity['hole'])
+                        if 'floor_section' in entity:
+                            destroy(entity['floor_section'])
+                    else:
+                        destroy(entity)
             else:
                 destroy(group)
+        
+        # Limpiar el minimapa
         for cell in self.minimap_cells:
             destroy(cell)
         self.minimap_cells.clear()
         destroy(self.player_marker)
-        # Seleccionar el Maze precargado
+        
+        # Configurar nuevo piso
         self.maze = self.preloaded_floors[floor]
         self.maze_entities = self.maze.create_maze_entities()
         self.player.position = self.maze.get_player_start_position()
@@ -208,7 +219,7 @@ class MazeGame(Entity):
         self.maze_entities = self.maze.create_maze_entities()
 
     def setup_player(self):
-        self.player = CustomFirstPersonController()
+        self.player = CustomFirstPersonController(maze=self.maze)
         self.player.position = self.maze.get_player_start_position()
 
     def setup_minimap(self):
@@ -247,18 +258,56 @@ class MazeGame(Entity):
 
     def reset_player(self):
         print("🏃‍♂️ Regresando al inicio...")
+        # Añadir una pequeña pausa antes de reiniciar
+        invoke(self._delayed_reset, delay=0.5)
+    
+    def _delayed_reset(self):
         self.player.position = self.maze.get_player_start_position()
 
     def check_traps(self):
         for trap in self.maze_entities['traps']:
-            if not trap:  # Verificar si la trampa existe
+            if not trap or trap['activated']:
                 continue
-            distance = (self.player.position - trap.position).length()
+                
+            distance = (self.player.position - trap['button'].position).length()
             if distance < self.maze.cell_size * 0.4:
-                print(f"✅ Trampa activada en {trap.position}")
-                trap.animate_position(trap.position + Vec3(0, -0.1, 0), duration=0.2, curve=curve.linear)
-                self.reset_player()
+                print(f"✅ Trampa activada en {trap['button'].position}")
+                
+                # Activar la trampa
+                trap['activated'] = True
+                
+                # Animar y destruir el botón
+                trap['button'].animate_position(
+                    trap['button'].position + Vec3(0, -0.5, 0),
+                    duration=0.2,
+                    curve=curve.linear
+                )
+                trap['button'].animate_color(color.clear, duration=0.2)
+                
+                # Animar y destruir la sección del piso
+                if trap['floor_section']:
+                    trap['floor_section'].animate_position(
+                        trap['floor_section'].position + Vec3(0, -2, 0),  # Caída más pronunciada
+                        duration=0.3,
+                        curve=curve.linear
+                    )
+                    trap['floor_section'].animate_color(color.clear, duration=0.3)
+                    invoke(destroy, trap['floor_section'], delay=0.4)
+                
+                # Hacer visible el hoyo y ajustar su posición
+                trap['hole'].position = trap['button'].position + Vec3(0, -0.5, 0)
+                trap['hole'].visible = True
+                trap['hole'].color = color.black66  # Más visible
+                
+                # Programar la destrucción del botón
+                invoke(destroy, trap['button'], delay=0.3)
+                
                 return
+
+    def check_player_boundaries(self):
+        if not self.maze.check_maze_boundaries(self.player.position):
+            print("⚠️ Jugador fuera de los límites o caído en trampa")
+            self.reset_player()
 
     def update_minimap(self):
         px = int((self.player.position.x + self.maze.cell_size/2) / self.maze.cell_size)
@@ -271,14 +320,15 @@ class MazeGame(Entity):
             self.player_marker.position = Vec3(ui_x, ui_y, -0.01)
 
     def check_exit(self):
-        px = int((self.player.position.x + self.maze.cell_size/2) / self.maze.cell_size)
-        py = int((self.player.position.z + self.maze.cell_size/2) / self.maze.cell_size)
-        if (px, py) == self.maze.exit:
+        if self.maze.check_player_exit(self.player.position):
             print("🎯 ¡Has llegado a la salida!")
-            self.next_floor()
+            self.next_floor()  # Esto ya debería funcionar correctamente
+            return True
+        return False
 
     def game_update(self):
         self.check_traps()
+        self.check_player_boundaries()
         self.update_minimap()
         self.check_exit()
 
