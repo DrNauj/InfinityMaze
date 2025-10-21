@@ -3,6 +3,16 @@ import random
 import os
 from ursina.shaders import lit_with_shadows_shader  # Añadir esta importación al inicio
 
+# Utilidad para destruir objetos de forma segura dentro del módulo
+def safe_destroy(obj):
+	try:
+		if obj is None:
+			return
+		destroy(obj)
+	except Exception:
+		# Suprimir errores para evitar interrupciones en la generación
+		pass
+
 class TextureTheme:
     def __init__(self):
         self.texture_path = os.path.join('assets', 'textures')
@@ -253,7 +263,8 @@ class Maze:
                     # Encontrar y destruir la sección original del piso
                     for section in self.floor_sections:
                         if section['position'] == (x, y):
-                            destroy(section['entity'])
+                            # usar safe_destroy en vez de destroy directo
+                            safe_destroy(section['entity'])
                             self.floor_sections.remove(section)
                             break
 

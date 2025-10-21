@@ -1,0 +1,19 @@
+# Ignorar la carpeta con la versión ejecutable / empaquetada
+build/
+dist/
+*.exe
+*.zip
+*.egg-info/
+
+# Entornos virtuales y caches
+.venv/
+env/
+__pycache__/
+*.pyc
+
+# Editor / sistema
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
